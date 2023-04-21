@@ -1,0 +1,7 @@
+# ignore training folder
+train.csv
+train.csv/
+
+# ignore test folder
+test.csv
+test.csv/
