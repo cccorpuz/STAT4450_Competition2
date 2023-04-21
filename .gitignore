@@ -5,3 +5,7 @@ train.csv/
 # ignore test folder
 test.csv
 test.csv/
+
+# ignore submission csvs
+submission.csv
+sub.csv
