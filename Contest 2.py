@@ -5,17 +5,17 @@ import matplotlib.pyplot as plt
 import lightgbm as lgb
 from tqdm import tqdm
 from sklearn.preprocessing import StandardScaler
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split, KFold
 from sklearn.metrics import accuracy_score, roc_curve, auc
 import gc
 import scipy.ndimage
 from fastai.tabular.all import *
 
-train = pd.read_csv("C:/Users/14025/OneDrive - University of Nebraska at Omaha/Classes/SP23/MATH 4450 - Introduction to Machine Learning and Data Mining/comp2/collab/train.csv")
-test = pd.read_csv("C:/Users/14025/OneDrive - University of Nebraska at Omaha/Classes/SP23/MATH 4450 - Introduction to Machine Learning and Data Mining/comp2/collab/test.csv")
+# train = pd.read_csv("C:/Users/14025/OneDrive - University of Nebraska at Omaha/Classes/SP23/MATH 4450 - Introduction to Machine Learning and Data Mining/comp2/collab/train.csv")
+# test = pd.read_csv("C:/Users/14025/OneDrive - University of Nebraska at Omaha/Classes/SP23/MATH 4450 - Introduction to Machine Learning and Data Mining/comp2/collab/test.csv")
 
-# train = pd.read_csv("./train.csv/train.csv")
-# test = pd.read_csv("./test.csv/test.csv")
+train = pd.read_csv("./train.csv/train.csv")
+test = pd.read_csv("./test.csv/test.csv")
 
 # 1. Removing fake results from test dataframe
 test_codes = test["ID_code"].values
@@ -129,43 +129,45 @@ del full
 gc.collect()
 print(train.shape, test.shape)
 
+# ============================================================================
 # Prediction with LightGBM model
-# First check accuracy with 70/30 split
-x_train, x_val, y_train, y_val = train_test_split(
-    train, target, test_size=0.3, random_state=123
-)
+# ============================================================================
 
-train_data = lgb.Dataset(x_train, label=y_train)
-val_data = lgb.Dataset(x_val, label=y_val)
-
-# params = {
-#     "boost_from_average": "false",
-#     "boost": "gbdt",
-#     "feature_fraction": 1,
-#     "learning_rate": 0.08,
-#     "max_depth": -1,
-#     "metric": "binary_logloss",
-#     "num_leaves": 4,
-#     "num_threads": 8,
-#     "tree_learner": "serial",
-#     "objective": "binary",
-#     "reg_alpha": 2,
-#     "reg_lambda": 0,
-#     "verbosity": 1,
-#     "max_bin": 256,
-# }
-
+# Set parameters and num_rounds
 params = {
-    "boosting_type": "gbdt",
-    "objective": "binary",
-    "metric": "binary_logloss",
-    "num_leaves": 31,
+    "bagging_freq": 5,
+    "bagging_fraction": 1.0,
+    "boost_from_average": "false",
+    "boost": "gbdt",
+    "feature_fraction": 0.9,
     "learning_rate": 0.05,
+    "max_depth": -1,
+    "metric": "binary_logloss",
+    "min_data_in_leaf": 30,
+    "min_sum_hessian_in_leaf": 10.0,
+    "num_leaves": 64,
+    "num_threads": 8,
+    "tree_learner": "serial",
+    "objective": "binary",
+    "verbosity": 1,
+    "max_bin": 512,
 }
+num_rounds = 1600
 
-# train the model
-num_rounds = 100
-model = lgb.train(params, train_data, num_rounds, valid_sets=[val_data])
+# ============================================================================
+# 70/30 Validation set approach
+# ============================================================================
+
+# x_train, x_val, y_train, y_val = train_test_split(
+#     train, target, test_size=0.3, random_state=123
+# )
+
+# train_data = lgb.Dataset(x_train, label=y_train)
+# val_data = lgb.Dataset(x_val, label=y_val)
+
+# model = lgb.train(
+#     params, train_data, num_rounds, valid_sets=[val_data], early_stopping_rounds=10
+# )
 
 # make predictions on the validation data
 # y_pred = model.predict(x_val)
@@ -174,39 +176,111 @@ model = lgb.train(params, train_data, num_rounds, valid_sets=[val_data])
 # accuracy = accuracy_score(y_val, y_pred.round().astype(int))
 # print(accuracy)
 
-# Make final prediction for test
+# ============================================================================
+# 5-Fold Cross Validation
+# ============================================================================
+
+kf = KFold(n_splits=5, shuffle=True, random_state=123)
+
+accuracies = []
+models = []
+i = 0
+
+av_preds_all = np.zeros(test_length)
+
+# Loop through each fold
+for train_index, val_index in kf.split(train):
+    # Split the data into train and validation sets for this fold
+    # label=pd.DataFrame(target).iloc[train_index],
+    X_train = lgb.Dataset(train.iloc[train_index], label=target[train_index])
+    X_val = lgb.Dataset(train.iloc[val_index], label=target[val_index])
+    y_val = target[val_index]
+
+    models.append(lgb.train(params, X_train, num_rounds, valid_sets=[X_val]))
+
+    # Make predictions on the validation set for this fold
+    y_pred = models[i].predict(train.iloc[val_index])
+
+    # Make predictions on the test set for this fold
+    # Instead of simply grabbing the highest scoring model, here we are trying to average all the models
+    pred_real = models[i].predict(test)
+    pred_synth = models[i].predict(synth)
+
+    # Make predictions on the real and synthetic sets seperately then concatenate for final pred
+    av_preds = np.zeros(test_length)
+    av_preds[real_idx] = pred_real
+    av_preds[synth_idx] = pred_synth
+
+    av_preds_all += av_preds
+
+    # Calculate the validation metric for this fold
+    # Add the validation result to the list
+    accuracy = accuracy_score(y_val, y_pred.round().astype(int))
+    print(f"Accuracy on fold {i + 1}: {accuracy}")
+    accuracies.append(accuracy)
+    i += 1
+
+# Calculate the average validation score across all folds
+print(f"Mean accuracies: {np.mean(accuracies)}")
+print(f"List of accuracies: {accuracies}")
+
+# Select the best model to use in our final prediction
+model = models[accuracies.index(max(accuracies))]
+
+# Average the predictions made from av_preds
+av_preds /= kf.get_n_splits()
+
+
+# ============================================================================
+# Final predictions on test set
+# ============================================================================
+
+# Get the original id codes
 sub = pd.DataFrame({"ID_code": test_codes})
+av_sub = pd.DataFrame({"ID_code": test_codes})
 
 pred_real = model.predict(test)
 pred_synth = model.predict(synth)
 
+# Make predictions on the real and synthetic sets seperately then concatenate for final pred
 preds_all = np.zeros(test_length)
 preds_all[real_idx] = pred_real
 preds_all[synth_idx] = pred_synth
+
+# Prediction on best result from 5-fold cv
 sub["target"] = preds_all
 sub.to_csv("submission.csv", index=False)
-print(sub.head(20))
+print(f"Best result sub: {sub.head(20)}")
+
+# Prediction on average result from 5-fold cv
+av_sub["target"] = av_preds_all
+av_sub.to_csv("av_submission.csv", index=False)
+print(f"Average result sub: {av_sub.head(20)}")
 
 # ============================================================
 # Predicting with a neural net
-dependent_var = 'target'
-cont_names = x_train.columns.toList()
-cont_names.remove(dependent_var)
+# dependent_var = "target"
+# cont_names = x_train.columns.toList()
+# cont_names.remove(dependent_var)
 
-## creating a dataloader
-dls = TabularDataLoaders.from_df(x_train, y_names=dependent_var, procs=[Normalize, Categorify])
-dls = TabularDataLoaders.from_df(y_train, y_names=dependent_var, procs=[Normalize, Categorify])
+# ## creating a dataloader
+# dls = TabularDataLoaders.from_df(
+#     x_train, y_names=dependent_var, procs=[Normalize, Categorify]
+# )
+# dls = TabularDataLoaders.from_df(
+#     y_train, y_names=dependent_var, procs=[Normalize, Categorify]
+# )
 
-learn = tabular_learner(dls, layers=[10,10,10], metrics=accuracy)
+# learn = tabular_learner(dls, layers=[10, 10, 10], metrics=accuracy)
 
-# Training the NN
-learn.fit_one_cycle(n_epoch = 10)
+# # Training the NN
+# learn.fit_one_cycle(n_epoch=10)
 
-# Evaluating the NN
-preds, targs = learn.get_preds(dl=val_data)
-result = learn.validate()
-auc_val = result['auroc_score']
-print(auc_val)
+# # Evaluating the NN
+# preds, targs = learn.get_preds(dl=val_data)
+# result = learn.validate()
+# auc_val = result["auroc_score"]
+# print(auc_val)
 
 # # Using on test set
 # test_preds, targs = learn.get_preds(dl=test_data)
