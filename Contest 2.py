@@ -6,15 +6,16 @@ import lightgbm as lgb
 from tqdm import tqdm
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import accuracy_score
+from sklearn.metrics import accuracy_score, roc_curve, auc
 import gc
 import scipy.ndimage
+from fastai.tabular.all import *
 
-# train = pd.read_csv("./train.csv")
-# test = pd.read_csv("./test.csv")
+train = pd.read_csv("C:/Users/14025/OneDrive - University of Nebraska at Omaha/Classes/SP23/MATH 4450 - Introduction to Machine Learning and Data Mining/comp2/collab/train.csv")
+test = pd.read_csv("C:/Users/14025/OneDrive - University of Nebraska at Omaha/Classes/SP23/MATH 4450 - Introduction to Machine Learning and Data Mining/comp2/collab/test.csv")
 
-train = pd.read_csv("./train.csv/train.csv")
-test = pd.read_csv("./test.csv/test.csv")
+# train = pd.read_csv("./train.csv/train.csv")
+# test = pd.read_csv("./test.csv/test.csv")
 
 # 1. Removing fake results from test dataframe
 test_codes = test["ID_code"].values
@@ -185,3 +186,27 @@ preds_all[synth_idx] = pred_synth
 sub["target"] = preds_all
 sub.to_csv("submission.csv", index=False)
 print(sub.head(20))
+
+# ============================================================
+# Predicting with a neural net
+dependent_var = 'target'
+cont_names = x_train.columns.toList()
+cont_names.remove(dependent_var)
+
+## creating a dataloader
+dls = TabularDataLoaders.from_df(x_train, y_names=dependent_var, procs=[Normalize, Categorify])
+dls = TabularDataLoaders.from_df(y_train, y_names=dependent_var, procs=[Normalize, Categorify])
+
+learn = tabular_learner(dls, layers=[10,10,10], metrics=accuracy)
+
+# Training the NN
+learn.fit_one_cycle(n_epoch = 10)
+
+# Evaluating the NN
+preds, targs = learn.get_preds(dl=val_data)
+result = learn.validate()
+auc_val = result['auroc_score']
+print(auc_val)
+
+# # Using on test set
+# test_preds, targs = learn.get_preds(dl=test_data)
