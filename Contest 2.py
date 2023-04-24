@@ -227,8 +227,8 @@ print(f"List of accuracies: {accuracies}")
 # Select the best model to use in our final prediction
 model = models[accuracies.index(max(accuracies))]
 
-# Average the predictions made from av_preds
-av_preds /= kf.get_n_splits()
+# Average the predictions made from av_preds_all
+av_preds_all /= kf.get_n_splits()
 
 
 # ============================================================================
