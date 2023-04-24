@@ -11,13 +11,17 @@ import gc
 import scipy.ndimage
 from fastai.tabular.all import *
 
+# ============================================================================
+# Preparing Data
+# ============================================================================
+
 # train = pd.read_csv("C:/Users/14025/OneDrive - University of Nebraska at Omaha/Classes/SP23/MATH 4450 - Introduction to Machine Learning and Data Mining/comp2/collab/train.csv")
 # test = pd.read_csv("C:/Users/14025/OneDrive - University of Nebraska at Omaha/Classes/SP23/MATH 4450 - Introduction to Machine Learning and Data Mining/comp2/collab/test.csv")
 
 train = pd.read_csv("./train.csv/train.csv")
 test = pd.read_csv("./test.csv/test.csv")
 
-# 1. Removing fake results from test dataframe
+# Removing fake results from test dataframe
 test_codes = test["ID_code"].values
 test.drop(["ID_code"], axis=1, inplace=True)
 test = test.values
@@ -34,7 +38,7 @@ test_length = test.shape[0]
 test_synth = test[synth_idx, :]
 test = test[real_idx, :]
 
-# 2. Append real test to training
+# Append real test to training
 target = np.array(list(train["target"].values))
 train_length = train.shape[0]
 train.drop(["ID_code"], axis=1, inplace=True)
@@ -108,8 +112,10 @@ full, features_count, features_density, features_deviation = get_features(full)
     fake_features_density,
     fake_features_deviation,
 ) = get_features(synth)
-print(full.shape)
-print(f"test_synth: {synth.shape}")
+print(f"Full shape: {full.shape}")
+print(full.head(20))
+print(f"Test_synth: {synth.shape}")
+print(synth.head(20))
 
 # Standardizing the features
 features_to_scale = [features, features_count]
@@ -127,7 +133,9 @@ test = full.iloc[train_length:, :]
 del full
 
 gc.collect()
-print(train.shape, test.shape)
+print(
+    f"Train shape after split: {train.shape}\nTest shape after split: {test.shape}\nSynthetic test shape: {synth.shape}"
+)
 
 # ============================================================================
 # Prediction with LightGBM model

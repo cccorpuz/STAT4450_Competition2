@@ -7,9 +7,4 @@ test.csv
 test.csv/
 
 # ignore submission csvs
-submission.csv
-sub.csv
-av_submission.csv
-av_sub.csv
-av_rounded_submission.csv
-av_rounded_sub.csv
+*.csv
